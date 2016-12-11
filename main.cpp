@@ -5,69 +5,9 @@
 #include <cstring>
 #include <sys/types.h>
 #include <sys/socket.h>
-#define DATA_SIZE 1024
+#include <zconf.h>
+#include "connection_list.h"
 
-typedef struct connection_list{
-    int client_socket, remote_socket;
-    int data_toremote, data_toclient;
-    char buf_toremote[DATA_SIZE];
-    char buf_toclient[DATA_SIZE];
-    connection_list *next, *prev;
-};
-connection_list *head, *tail;
-int fd_max;
-
-void set_fd_max(int fd){
-    if(fd_max < fd+1)
-        fd_max = fd + 1;
-}
-
-void add(int new_connection_fd, addrinfo *servinfo){
-    connection_list *q = (connection_list*)malloc(sizeof(connection_list));
-    q->client_socket = new_connection_fd;
-    q->remote_socket = socket(AF_INET, SOCK_STREAM, 0);
-    set_fd_max(q->remote_socket);
-    int res = connect(q->remote_socket, servinfo->ai_addr, sizeof(*servinfo->ai_addr));
-    if(res != 0){
-        perror("connecting to server error:");
-        close(q->remote_socket);
-        exit(3);
-    }
-    q->prev = NULL;
-    if(head != NULL) {
-        q->next = head;
-        head->prev = q;
-    }else{
-        q->next = NULL;
-        tail = q;
-    }
-    q->data_toclient = 0;
-    q->data_toremote = 0;
-    memset(q->buf_toremote, 0, sizeof(q->buf_toremote));
-    memset(q->buf_toclient, 0, sizeof(q->buf_toclient));
-    head = q;
-
-
-}
-
-void remove(connection_list *q){
-    if(q == head && q == tail) {
-        head = NULL;
-        tail = NULL;
-    } else if(q == head) {
-        head = head->next;
-        head->prev = NULL;
-    } else if(q == tail) {
-        tail = tail->prev;
-        tail->next = NULL;
-    } else {
-        q->prev->next = q->next;
-        q->next->prev = q->prev;
-    }
-    close(q->client_socket);
-    close(q->remote_socket);
-    free(q);
-}
 
 void set_descriptors(fd_set *readfs, fd_set *writefs, int listenfd){
     connection_list *q = head;
@@ -93,6 +33,10 @@ void set_descriptors(fd_set *readfs, fd_set *writefs, int listenfd){
 
 }
 
+void move_bufdata(char *buf, int last_datasize, int writed){
+    memmove(buf, buf + writed, last_datasize - writed);
+}
+
 void handle_descriptors(fd_set *readfs, fd_set *writefs){
     connection_list *q = head;
     int writed;
@@ -111,15 +55,23 @@ void handle_descriptors(fd_set *readfs, fd_set *writefs){
             writed = write(q->remote_socket,q->buf_toremote,q->data_toremote);
             if(writed == -1)
                 q->data_toclient = -1;
-            else
+            else if(writed == q->data_toremote)
                 q->data_toremote = 0; ///нет учета того, что записаться может не все.
+            else{
+                move_bufdata(q->buf_toremote,q->data_toremote,writed);
+                q->data_toremote -= writed;
+            }
         }
         if(q->data_toclient > 0 && FD_ISSET(q->client_socket,writefs)){
             writed = write(q->client_socket,q->buf_toclient,q->data_toclient);
             if(writed == -1)
                 q->data_toremote = -1;
-            else
+            else if(writed == q->data_toclient)
                 q->data_toclient = 0; ///нет учета того, что записаться может не все.
+            else{
+                move_bufdata(q->buf_toclient,q->data_toclient,writed);
+                q->data_toclient -= writed;
+            }
         }
 
         q = q->next;
@@ -180,10 +132,12 @@ int main(int argc, char** argv){
             perror("select errror:");
             exit(1);
         }
+        printf("current number of fd: %d\n",ready_fd);
         handle_descriptors(&readfs,&writefs);
         if(FD_ISSET(listenfd,&readfs)){
             socklen_t addrlen = sizeof(newclient_addr);
             new_connection_fd = accept(listenfd, (struct sockaddr *)&newclient_addr, &addrlen);
+            printf("new connection from port: %d\n",newclient_addr.sin_port);
             if(new_connection_fd < 0){
                 perror("accept error:");
                 exit(2);
