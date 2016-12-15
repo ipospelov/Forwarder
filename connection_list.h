@@ -1,3 +1,5 @@
+#include <cerrno>
+
 #define DATA_SIZE 4096
 typedef struct connection_list{
     int client_socket, remote_socket;
@@ -18,13 +20,15 @@ void set_fd_max(int fd){
 void add(int new_connection_fd, addrinfo *servinfo){
     connection_list *q = (connection_list*)malloc(sizeof(connection_list));
     q->client_socket = new_connection_fd;
-    q->remote_socket = socket(AF_INET, SOCK_STREAM, 0);
+    q->remote_socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     set_fd_max(q->remote_socket);
     int res = connect(q->remote_socket, servinfo->ai_addr, sizeof(*servinfo->ai_addr));
     if(res != 0){
-        perror("connecting to server error:");
-        close(q->remote_socket);
-        exit(3);
+        if(errno != EINPROGRESS) {
+            perror("connecting to server error:");
+            close(q->remote_socket);
+            exit(3);
+        }
     }
     q->prev = NULL;
     if(head != NULL) {

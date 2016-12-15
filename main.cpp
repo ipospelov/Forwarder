@@ -94,7 +94,7 @@ int main(int argc, char** argv){
     fd_max = 0;
 
     lport=atoi(argv[1]); //port to listen
-    rport=atoi(argv[3]);
+    //rport=atoi(argv[3]);
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;     // ipv4
@@ -119,8 +119,7 @@ int main(int argc, char** argv){
         return 0;
     }
 
-    listen(listenfd,SOMAXCONN); //SOMAXCONN - макс. число сокетов, открытых и ждущих соединения
-
+    listen(listenfd,SOMAXCONN);
     int ready_fd;
 
     while (true){
@@ -132,12 +131,12 @@ int main(int argc, char** argv){
             perror("select errror:");
             exit(1);
         }
-        printf("current number of fd: %d\n",ready_fd);
+        //printf("current number of fd: %d\n",ready_fd);
         handle_descriptors(&readfs,&writefs);
         if(FD_ISSET(listenfd,&readfs)){
             socklen_t addrlen = sizeof(newclient_addr);
             new_connection_fd = accept(listenfd, (struct sockaddr *)&newclient_addr, &addrlen);
-            printf("new connection from port: %d\n",newclient_addr.sin_port);
+            //printf("new connection from port: %d\n",newclient_addr.sin_port);
             if(new_connection_fd < 0){
                 perror("accept error:");
                 exit(2);
